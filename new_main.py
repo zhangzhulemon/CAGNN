@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from CAGNN import CAGNN, train_test, trans_to_cuda
 from graph.collate import gnn_collate_fn
 from graph.graph_construction import seq_to_hetero_graph
+from log import logger
 from utils.util import *
 
 
@@ -37,13 +38,19 @@ argparser.add_argument('--save_flag', default=False, type=bool,help='save checkp
 argparser.add_argument('--fdrop', default=0.2, type=float, help='feature drop')
 argparser.add_argument('--adrop', default=0.0, type=float, help='attention drop')
 argparser.add_argument('--dropout_local', type=float, default=0, help='Dropout rate.')
-argparser.add_argument('--num_layers', default=3, type=int, help='gnn layers')
+argparser.add_argument('--num_layers', default=1, type=int, help='gnn layers')
 argparser.add_argument('--graph_feature_select', default='gated',help='last/gated/mean')
 argparser.add_argument('--validation', action='store_true', help='validation')
 argparser.add_argument('--valid_portion', type=float, default=0.1, help='split the portion')
 argparser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
+argparser.add_argument('--neighbor_num', type=int, default=5, help='.')
+argparser.add_argument('--dropout1', type=float, default=0.0, help='.')
+argparser.add_argument('--dropout2', type=float, default=0.0, help='.')
+argparser.add_argument('--seed', type=int, default=2023, help='.')
+argparser.add_argument('--norm', type=bool, default=False, help='.')
 args = argparser.parse_args()
 print(args)
+logger.error(args)
 
 device = torch.device('cuda:0' if torch.cuda.is_available()  else 'cpu')
 
@@ -51,7 +58,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available()  else 'cpu')
 
 
 def main():
-    init_seed(2021)
+    init_seed(args.seed)
 
 
     if args.dataset == 'diginetica':
@@ -67,7 +74,12 @@ def main():
     elif args.dataset == 'Tmall':
         num_item = 40728
         num_cat = 712
+#         args.dropout_local = 0.5
 
+    elif args.dataset == 'yoochoose1_64_new':
+        num_item = 17746
+        num_cat = 36
+#         args.dropout_local = 0.5
     else:
         num_item = 9
         num_cat = 3
@@ -87,18 +99,11 @@ def main():
     train_data = Data(train_data, category)
     test_data = Data(test_data, category)
 
-    collate_fn = gnn_collate_fn(seq_to_hetero_graph)
-    print("构造图start：",datetime.datetime.now())
-    train_loader = DataLoader(train_data, num_workers=0,batch_size=args.batch,shuffle=True,pin_memory=True, collate_fn=collate_fn)
-    # valid_loader = DataLoader(valid_data, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
-    print("构造图end：", datetime.datetime.now())
-
-
 
     model = trans_to_cuda(CAGNN(args,
                   num_item,
                   num_cat,
+                  device,
                   batch_norm=True,
                   feat_drop=args.fdrop,
                   attention_drop=args.adrop).to(device))
@@ -114,13 +119,16 @@ def main():
     best_epoch_k20 = [0, 0]
     bad_counter_k20 = bad_counter_k10 = 0
 
+
     for epoch in range(args.epoch):
         print('-------------------------------------------------------')
+        logger.error('-------------------------------------------------------')
         print('epoch: ', epoch, " lr: " , model.optimizer.param_groups[0]['lr'])
+        logger.info("epoch: %s, lr: %s." % (epoch, model.optimizer.param_groups[0]['lr']))
 
         hit_k10, mrr_k10, hit_k20, mrr_k20, hit_k30, mrr_k30, hit_k40, mrr_k40, hit_k50, mrr_k50 = train_test(model,
-                                                                                                              train_loader,
-                                                                                                             test_loader)
+                                                                                                              train_data,
+                                                                                                             test_data)
 
         flag_k10 = 0
         if hit_k10 >= best_result_k10[0]:
@@ -131,11 +139,21 @@ def main():
             best_result_k10[1] = mrr_k10
             best_epoch_k10[1] = epoch
             flag_k10 = 1
+
         print("\n")
-        print('Best @10 Result:')
-        print('\tRecall@10:\t%.4f\tMMR@10:\t%.4f' % (
-            best_result_k10[0], best_result_k10[1]))
+        print('Current Result:')
+        print('\tRecall@10:\t%.4f\tMMR@10:\t%.4f' % (hit_k10, mrr_k10))
+        print('Best Result:')
+        print('\tRecall@10:\t%.4f\tMMR@10:\t%.4f\tEpoch:\t%d,\t%d' % (
+            best_result_k10[0], best_result_k10[1], best_epoch_k10[0], best_epoch_k10[1]))
         bad_counter_k10 += 1 - flag_k10
+
+        logger.error("\n")
+        logger.error('Current Result:')
+        logger.error('\tRecall@10:\t%.4f\tMMR@10:\t%.4f' % (hit_k10, mrr_k10))
+        logger.error('Best Result:')
+        logger.error('\tRecall@10:\t%.4f\tMMR@10:\t%.4f\tEpoch:\t%d,\t%d' % (
+            best_result_k10[0], best_result_k10[1], best_epoch_k10[0], best_epoch_k10[1]))
 
         flag_k20 = 0
         if hit_k20 >= best_result_k20[0]:
@@ -146,9 +164,20 @@ def main():
             best_result_k20[1] = mrr_k20
             best_epoch_k20[1] = epoch
             flag_k20 = 1
-        print('Best @20 Result:')
-        print('\tRecall@20:\t%.4f\tMMR@20:\t%.4f' % (
-            best_result_k20[0], best_result_k20[1]))
+        print("\n")
+        print('Current Result:')
+        print('\tRecall@20:\t%.4f\tMMR@20:\t%.4f' % (hit_k20, mrr_k20))
+        print('Best Result:')
+        print('\tRecall@20:\t%.4f\tMMR@20:\t%.4f\tEpoch:\t%d,\t%d' % (
+            best_result_k20[0], best_result_k20[1], best_epoch_k20[0], best_epoch_k20[1]))
+
+        logger.error("\n")
+        logger.error('Current Result:')
+        logger.error('\tRecall@20:\t%.4f\tMMR@20:\t%.4f' % (hit_k20, mrr_k20))
+        logger.error('Best Result:')
+        logger.error('\tRecall@20:\t%.4f\tMMR@20:\t%.4f\tEpoch:\t%d,\t%d' % (
+            best_result_k20[0], best_result_k20[1], best_epoch_k20[0], best_epoch_k20[1]))
+
         bad_counter_k20 += 1 - flag_k20
 
         if hit_k30 >= best_result_k30[0]:
@@ -159,12 +188,20 @@ def main():
         print('\tRecall@30:\t%.4f\tMMR@30:\t%.4f' % (
             best_result_k30[0], best_result_k30[1]))
 
+        logger.error('Best @30 Result:')
+        logger.error('\tRecall@30:\t%.4f\tMMR@30:\t%.4f' % (
+            best_result_k30[0], best_result_k30[1]))
+
         if hit_k40 >= best_result_k40[0]:
             best_result_k40[0] = hit_k40
         if mrr_k40 >= best_result_k40[1]:
             best_result_k40[1] = mrr_k40
         print('Best @40 Result:')
         print('\tRecall@40:\t%.4f\tMMR@40:\t%.4f' % (
+            best_result_k40[0], best_result_k40[1]))
+
+        logger.error('Best @40 Result:')
+        logger.error('\tRecall@40:\t%.4f\tMMR@40:\t%.4f' % (
             best_result_k40[0], best_result_k40[1]))
 
         if hit_k50 >= best_result_k50[0]:
@@ -175,12 +212,18 @@ def main():
         print('\tRecall@50:\t%.4f\tMMR@50:\t%.4f' % (
             best_result_k50[0], best_result_k50[1]))
 
+        logger.error('Best @50 Result:')
+        logger.error('\tRecall@50:\t%.4f\tMMR@50:\t%.4f' % (
+            best_result_k50[0], best_result_k50[1]))
+
         if ((bad_counter_k20 >= args.patience) and (bad_counter_k10 >= args.patience)):
             break
 
     print('-------------------------------------------------------')
+    logger.error('-------------------------------------------------------')
     end = time.time()
     print("Run time: %f s" % (end - start))
+    logger.error("Run time: %f s" % (end - start))
 
 
 if __name__ == '__main__':

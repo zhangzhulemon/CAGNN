@@ -43,11 +43,13 @@ class Data(Dataset):
         self.targets = np.asarray(data[1])
         self.mask = np.asarray(mask)
         self.length = len(data[0])
+        self.seq_len_uniq = np.asarray([len(np.unique(x)) for x in data[0]])
         self.seq_len = np.asarray([len(x) for x in data[0]])
         self.max_len = max_len
 
     def __getitem__(self, index):
-        u_input, mask, label, seq_len = self.inputs[index], self.mask[index], self.targets[index], self.seq_len[index]
+        u_input, mask, label, seq_len, seq_len_uniq = \
+            self.inputs[index], self.mask[index], self.targets[index], self.seq_len[index], self.seq_len_uniq[index]
         category_ids= getCaIds(u_input, self.category)
         # ________________________________________________________________
         max_n_node = self.max_len
@@ -74,9 +76,9 @@ class Data(Dataset):
         # alias_category = [np.where(node_cat == i)[0][0] for i in category_ids]
 
         next_cate = self.category[label]
-        # alias_inputs,alias_category,adj,u_input,category_ids,mask,seq_len,label,next_cate
+        # adj,u_input,alias_inputs,category_ids,mask,seq_len,seq_len_uniq, label,next_cate
         return [torch.tensor(adj), torch.tensor(u_input), torch.tensor(alias_inputs),torch.tensor(category_ids),torch.tensor(mask),
-                torch.tensor(seq_len), torch.tensor(label), torch.tensor(next_cate)]
+                torch.tensor(seq_len),torch.tensor(seq_len_uniq),torch.tensor(label), torch.tensor(next_cate)]
 
 
     def __len__(self):

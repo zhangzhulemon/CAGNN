@@ -10,7 +10,7 @@ def label_to_hetero_graph(g: dgl.DGLHeteroGraph, items, cates, map_c_items, posi
 
     g.nodes["i"].data['id'] = torch.from_numpy(items)
     g.nodes['c'].data['id'] = torch.from_numpy(cates)
-    g.edges['c2i'].data['pos'] = torch.from_numpy(positions)
+    # g.edges['c2i'].data['pos'] = torch.from_numpy(positions)
 
     i_count = len(items)
     c_count = len(cates)
